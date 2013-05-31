@@ -1,0 +1,1 @@
+class RedpassException < Exception; end
