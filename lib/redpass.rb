@@ -30,11 +30,11 @@ class Redpass
   end
 
   def initialize(password, api_secret, options)
-    @password, @api_secret, @options = ActiveSupport::Base64.encode64(password), api_secret, options
+    @password, @api_secret, @options = Base64.encode64(password), api_secret, options
   end
 
   def pay
-    code = get_response_code(api_call_result.body)
+    code = get_response_code(api_call_result)
     if code == SUCCESS_CODE
       true
     else
@@ -45,28 +45,29 @@ class Redpass
   private
 
   def api_call_result
-    http = Net::HTTP.new(API_HOST, API_PORT)
+    uri = URI.parse("https://#{API_HOST}#{API_PATH}")
+    uri.query = URI.encode_www_form(args_hash)
+    http = Net::HTTP.new(uri.host, uri.port)
     http.use_ssl = true
-    http.post(API_PATH, data_string, headers)
+    http.verify_mode = OpenSSL::SSL::VERIFY_NONE
+
+    request = Net::HTTP::Get.new(uri.request_uri)
+    http.request(request).body
   end
 
-  def prepare_data_hash
-    {
+  def args_hash
+    data_hash = {
       :account_id => @options[:from],
       :to_email => @options[:to],
       :pass => @password,
       :currency => @options[:currency], 
       :amount => @options[:amount],
-      :descriptor => "#{@options[:id]} #{@options[:domain]}",
+      :descriptor => "#{@options[:id]}#{@options[:domain]}",
       :reference_id => Time.now.to_i,
       :format => "JSON"
     }
-  end
-
-  def data_string
-    data_hash = prepare_data_hash
     data_hash[:hash] = count_key(data_hash)
-    "account_id=#{data_hash[:account_id]}&to_email=#{data_hash[:to_email]}&pass=#{data_hash[:pass]}&otp=#{data_hash[:otp]}&currency=#{data_hash[:currency]}&amount=#{data_hash[:amount]}&descriptor=#{data_hash[:descriptor]}&reference_id=#{data_hash[:reference_id]}&format=#{data_hash[:format]}&hash=#{data_hash[:hash]}"
+    data_hash
   end
 
   def headers
@@ -83,11 +84,7 @@ class Redpass
   end
 
   def get_response_code(result)
-    begin
-      transaction_result = JSON.parse(result)
-    rescue
-      raise RedpassException, "empty_result"
-    end
+    transaction_result = JSON.parse(result)
     transaction_result["Response_Code"] || transaction_result["code"]
   end
 
